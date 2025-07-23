@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
 	"net"
 	"os"
 	"path"
@@ -1143,6 +1144,58 @@ func main() {
 	commands["file-locations"] = commandSpec{
 		flags: fileLocationsCmd,
 		run:   fileLocationsRun,
+	}
+
+	estimateFileAgeCmd := flag.NewFlagSet("estimate-file-age", flag.ExitOnError)
+	estimateFileAgeId := estimateFileAgeCmd.Uint64("id", 0, "ID of the file to estimage age for")
+	estimateFileAgeRun := func() {
+		id := msgs.InodeId(*estimateFileAgeId)
+		c := getClient()
+		fileSpansReq := msgs.FileSpansReq{
+			FileId:     id,
+			ByteOffset: 0,
+		}
+		fileSpansResp := msgs.FileSpansResp{}
+		var oldestBlock uint64 = math.MaxUint64
+
+		for {
+			if err := c.ShardRequest(l, id.Shard(), &fileSpansReq, &fileSpansResp); err != nil {
+				panic(err)
+			}
+			for spanIx := range fileSpansResp.Spans {
+				span := &fileSpansResp.Spans[spanIx]
+				if span.Header.IsInline {
+					continue
+				}
+				locBody := span.Body.(*msgs.FetchedLocations)
+				for _, loc := range locBody.Locations {
+					for _, block := range loc.Blocks {
+						oldestBlock = min(oldestBlock, uint64(block.BlockId))
+					}
+				}
+			}
+			if fileSpansResp.NextOffset == 0 {
+				break
+			}
+			fileSpansReq.ByteOffset = fileSpansResp.NextOffset
+		}
+		if oldestBlock == math.MaxUint64 {
+			statFileReq := msgs.StatFileReq{Id: id}
+			statFileResp := msgs.StatFileResp{}
+			if err := c.ShardRequest(l, id.Shard(), &statFileReq, &statFileResp); err != nil {
+				panic(err)
+			}
+			mtime := statFileResp.Mtime
+			l.Info("File %v has no blocks to use in file age estimation, returning mtime %v", id, msgs.TernTime(mtime))
+			return
+		} else {
+			l.Info("Estimated file age %v, %v", id, msgs.TernTime(oldestBlock))
+		}
+	}
+
+	commands["estimate-file-age"] = commandSpec{
+		flags: estimateFileAgeCmd,
+		run:   estimateFileAgeRun,
 	}
 
 	findCmd := flag.NewFlagSet("find", flag.ExitOnError)
