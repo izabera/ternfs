@@ -5,9 +5,11 @@
 #ifndef _TERNFS_BLOCK_H
 #define _TERNFS_BLOCK_H
 
+#include <linux/build_bug.h>
 #include <linux/kernel.h>
 #include <linux/completion.h>
 #include <linux/net.h>
+#include <linux/string.h>
 #include <net/tcp.h>
 
 #include "bincode.h"
@@ -18,6 +20,7 @@ extern int ternfs_fetch_block_timeout_jiffies;
 extern int ternfs_write_block_timeout_jiffies;
 extern int ternfs_block_service_connect_timeout_jiffies;
 
+#define TERNFS_BLOCK_SERVICE_EXPECTED_PADDING 3
 struct ternfs_block_service {
     u64 id;
     u32 ip1;
@@ -25,12 +28,12 @@ struct ternfs_block_service {
     u16 port1;
     u16 port2;
     u8 flags;
+    u8 _[TERNFS_BLOCK_SERVICE_EXPECTED_PADDING];
 };
 
 static inline bool ternfs_block_services_equal(struct ternfs_block_service* l, struct ternfs_block_service* r) {
-    // We don't memcmp to not compare padding.
-    return l->id == r->id && l->ip1 == r->ip1 && l->ip2 == r->ip2 &&
-        l->port1 == r->port1 && l->port2 == r->port2 && l->flags == r->flags;
+    BUILD_BUG_ON(sizeof(struct ternfs_block_service) != offsetof(struct ternfs_block_service, _) + TERNFS_BLOCK_SERVICE_EXPECTED_PADDING);
+    return memcmp(l, r, offsetof(struct ternfs_block_service, _)) == 0;
 }
 
 // Returns an error immediately if it can't connect to the block service or anyway
