@@ -15,6 +15,7 @@
 #include "Env.hpp"
 #include "Msgs.hpp"
 #include "Loop.hpp"
+#include "Random.hpp"
 
 struct UDPSocketPair {
     UDPSocketPair(Env& env, const AddrsInfo& addr, int32_t sockBufSize = 1 << 20);
@@ -122,7 +123,7 @@ struct UDPReceiver {
             size_t maxMsgs = std::min(maxMsgCount-messagesSoFar, _perSockMaxRecvMsg);
             LOG_TRACE(env, "data on address %s, reading up to %s messages", socks[sockIx1].addr()[sockIx2], maxMsgs);
             int ret = recvmmsg(pfd.fd, &_recvHdrs[messagesSoFar], maxMsgs, MSG_DONTWAIT, nullptr);
-            if (unlikely(ret < 0)) { 
+            if (unlikely(ret < 0)) {
                 if (noPoll) {
                     continue;
                 }
@@ -189,9 +190,9 @@ public:
 
     template<typename Fill>
     void prepareOutgoingMessage(Env& env, const AddrsInfo& srcAddr, const AddrsInfo& dstAddr, Fill f) {
-        auto now = ternNow(); // randomly pick one of the dest addrs and one of our sockets
-        uint8_t srcSockIdx = now.ns & (srcAddr[1].port != 0);
-        uint8_t dstSockIdx = (now.ns>>1) & (dstAddr[1].port != 0);
+        auto nowHashed = RandomGenerator(ternNow().ns).generate64(); // randomly pick one of the dest addrs and one of our sockets
+        uint8_t srcSockIdx = nowHashed & (srcAddr[1].port != 0);
+        uint8_t dstSockIdx = (nowHashed>>1) & (dstAddr[1].port != 0);
         prepareOutgoingMessage(env, srcAddr, srcSockIdx, dstAddr[dstSockIdx], f);
     }
 
