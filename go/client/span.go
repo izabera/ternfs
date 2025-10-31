@@ -491,7 +491,7 @@ func (c *Client) fetchMirroredSpan(
 				// panic since we CRC every page, this must be a bug in the go logic
 				panic(fmt.Errorf("bad CRC, expected %v, got %v", span.Span.Header.Crc, msgs.Crc(crc)))
 			}
-			return br.AcquireBuf(), nil
+			return buf, nil
 		}
 		bufPool.Put(br.AcquireBuf())
 	}
