@@ -509,14 +509,13 @@ func fetchRsSpan(
 
 	dataSize := blockSize * uint32(body.Parity.DataBlocks())
 
-	ch := make(chan *blockCompletion)
-
 	var succeedBlocks int
 	var inFlightBlocks int
 	var blockIdx int
 	dataBlocks := body.Parity.DataBlocks()
 	blockBufs := make([]*bufpool.Buf, body.Parity.Blocks())
 	blockCrcs := make([]*[15]msgs.Crc, body.Parity.Blocks())
+
 	defer func() {
 		for i := range blockBufs {
 			bufPool.Put(blockBufs[i])
@@ -529,6 +528,7 @@ func fetchRsSpan(
 		cellsCrcs CellsCrcs
 	}
 
+	ch := make(chan *blockCompletion, dataBlocks)
 scheduleMoreBlocks:
 	for succeedBlocks+inFlightBlocks < dataBlocks && blockIdx < body.Parity.Blocks() {
 		block := body.Blocks[blockIdx]
