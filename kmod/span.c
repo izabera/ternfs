@@ -976,7 +976,7 @@ retry:
         up_read(&spans->__lock);
         if (likely(span != NULL)) {
             // evict expired span
-            if (unlikely(fetched_at - span->fetched_at > ternfs_span_cache_retention_jiffies)) {
+            if (unlikely(fetched_at - span->fetched_at > ternfs_span_cache_retention_jiffies && span->storage_class != TERNFS_INLINE_STORAGE)) {
                 ternfs_unlink_span(spans, span);
                 span = NULL;
             } else {
