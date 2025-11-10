@@ -1034,7 +1034,10 @@ retry:
 
 void ternfs_unlink_span(struct ternfs_file_spans* spans, struct ternfs_span* span) {
     down_write(&spans->__lock);
-    rb_erase(&span->node, &spans->__spans);
+    if (likely(!RB_EMPTY_NODE(&span->node))) {
+        rb_erase(&span->node, &spans->__spans);
+        RB_CLEAR_NODE(&span->node);
+    }
     ternfs_put_span(span);
     up_write(&spans->__lock);
 }
