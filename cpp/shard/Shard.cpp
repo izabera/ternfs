@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <memory>
 #include <ostream>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -703,6 +704,8 @@ private:
     std::vector<ProxyLogsDBRequest> _proxyReadRequests; // currently processing proxied read requests
     std::vector<LogIdx>  _proxyReadRequestsIndices;  // indices from above reuqests as LogsDB api needs them
 
+    std::vector<ShardReq> _linkReadRequests; //TODO: make LogsDB support reads from different thread
+
     static constexpr size_t CATCHUP_BUFFER_SIZE = 1 << 17;
     std::array<std::pair<uint64_t,LogsDBLogEntry>,CATCHUP_BUFFER_SIZE> _catchupWindow;
     uint64_t _catchupWindowIndex; // index into the catchup window
@@ -714,6 +717,8 @@ private:
     // kinda unsafe anyway (if clients get restarted), but it's such
     // a useful optimization for now that we live with it.
     std::unordered_set<InFlightRequestKey> _inFlightRequestKeys;
+
+    std::map<std::pair<LogIdx, uint64_t>, ShardReq> _waitStateRequests; // log idx + request id for requests waiting for logsdb to advance
 
     uint64_t _requestIdCounter;
 
@@ -830,6 +835,26 @@ public:
                 [&reqMsg, this](BincodeBuf& buf) {
                     reqMsg.pack(buf, _expandedShardKey);
             });
+        }
+    }
+
+    void _sendWaitStateAppliedResponses() {
+        auto lastApplied = _logsDB.getLastReleased();
+        for(auto it = _waitStateRequests.begin(); it != _waitStateRequests.end(); ) {
+            if (lastApplied < it->first.first.u64) {
+                break;
+            }
+            auto& req = it->second;
+
+            bool dropArtificially = _packetDropRand.generate64() % 10'000 < _outgoingPacketDropProbability;
+            ShardRespMsg resp;
+            resp.id = req.msg.id;
+            resp.body.setWaitStateApplied();
+
+            it = _waitStateRequests.erase(it);
+            _inFlightRequestKeys.erase(InFlightRequestKey{req.msg.id, req.clientAddr});
+
+            packShardResponse(_env, _shared, _shared.sock().addr(), _sender, dropArtificially, req, resp);
         }
     }
 
@@ -1047,6 +1072,69 @@ public:
         _logsDBEntries.clear();
     }
 
+    void _processLinkReadRequest(const ShardReq& req) {
+        ShardRespMsg resp;
+        resp.id = req.msg.id;
+        auto& respBody = resp.body.setGetLinkEntries();
+        auto& reqBody = req.msg.body.getGetLinkEntries();
+
+        respBody.nextIdx = std::max(reqBody.fromIdx, _logsDB.getHeadIdx());
+        std::vector<LogIdx> indexes;
+        std::vector<LogsDBLogEntry> readEntries;
+        indexes.reserve(128);
+        readEntries.reserve(128);
+
+        size_t processed = 0;
+        const size_t maxProcess = 1024;
+
+        auto mtu = std::min(reqBody.mtu == 0 ? (int)DEFAULT_UDP_MTU : (int)reqBody.mtu, (int)MAX_UDP_MTU);
+
+        int budget = mtu - (int)ShardRespMsg::STATIC_SIZE - (int)GetLinkEntriesResp::STATIC_SIZE;
+
+        const size_t maxEntriesByMtu = budget / (int)LinkEntry::STATIC_SIZE;
+        while (respBody.nextIdx < _logsDB.getLastReleased() && respBody.entries.els.size() < maxEntriesByMtu && processed < maxProcess) {
+            LogIdx startIdx = respBody.nextIdx;
+            readEntries.clear();
+            indexes.clear();
+            for (int i = 0; i < 128 && processed < maxProcess; ++i) {
+                if (_logsDB.getLastReleased() < startIdx) {
+                    break;
+                }
+                indexes.push_back(startIdx);
+                ++startIdx;
+                ++processed;
+            }
+            if (indexes.empty()) {
+                break;
+            }
+            _logsDB.readIndexedEntries(indexes, readEntries);
+            for (auto& entry: readEntries) {
+                if (entry.idx == 0) {
+                    ++respBody.nextIdx;
+                    continue;
+                }
+                respBody.nextIdx = entry.idx;
+                ShardLogEntry logEntry;
+                BincodeBuf buf((char*)entry.value.data(), entry.value.size());
+                logEntry.unpack(buf);
+                if (logEntry.body.kind() != ShardLogEntryKind::LINK_FILE) {
+                    continue;
+                }
+                auto& link = logEntry.body.getLinkFile();
+                LinkEntry newEntry;
+                newEntry.id = link.fileId;
+                newEntry.ownerId = link.ownerId;
+                newEntry.time = logEntry.time;
+                respBody.entries.els.emplace_back(newEntry);
+                if (respBody.entries.els.size() >= maxEntriesByMtu) {
+                    break;
+                }
+            }
+        }
+
+        packShardResponse(_env, _shared, _shared.sock().addr(), _sender, false, req, resp);
+    }
+
     void _processCatchupWindow() {
         if (!_isLogsDBLeader || !_shared.options.isProxyLocation()) {
             return;
@@ -1144,6 +1232,8 @@ public:
             _proxyLogsDBResponses.clear();
         }
 
+        _linkReadRequests.clear();
+
         if (!_shared.options.isProxyLocation()) {
             // we don't expect and should not process any shard  responses if in primary location
             _shardResponses.clear();
@@ -1163,9 +1253,32 @@ public:
                 // we already have a request in flight with this id from this client
                 continue;
             }
-            if (req.msg.body.kind() == ShardMessageKind::SHARD_SNAPSHOT) {
-                snapshotReq = std::move(req);
-                continue;
+            switch (req.msg.body.kind()) {
+                case ShardMessageKind::SHARD_SNAPSHOT:
+                    snapshotReq = std::move(req);
+                    continue;
+                case ShardMessageKind::GET_LINK_ENTRIES:
+                    _linkReadRequests.emplace_back(std::move(req));
+                    continue;
+                case ShardMessageKind::WAIT_STATE_APPLIED:
+                    {
+                        auto& waitReq = req.msg.body.getWaitStateApplied();
+                        auto logIdx = LogIdx{waitReq.idx.u64};
+                        if (logIdx.u64 <= _logsDB.getLastReleased().u64) {
+                            // already applied
+                            bool dropArtificially = _packetDropRand.generate64() % 10'000 < _outgoingPacketDropProbability;
+                            ShardRespMsg resp;
+                            resp.id = req.msg.id;
+                            resp.body.setWaitStateApplied();
+                            packShardResponse(_env, _shared, _shared.sock().addr(), _sender, dropArtificially, req, resp);
+                        } else {
+                            _inFlightRequestKeys.insert(InFlightRequestKey{req.msg.id, req.clientAddr});
+                            _waitStateRequests.emplace(std::make_pair(logIdx, req.msg.id), std::move(req));
+                        }
+                    }
+                    continue;
+                default:
+                    break;
             }
 
             if (_shared.options.isProxyLocation()) {
@@ -1411,7 +1524,13 @@ public:
 
         _sendProxyAndCatchupRequests();
 
+        _sendWaitStateAppliedResponses();
+
         _shared.shardDB.flush(true);
+
+        for (auto& req : _linkReadRequests) {
+            _processLinkReadRequest(req);
+        }
         // not needed as we just flushed and apparently it does actually flush again
         // _logsDB.flush(true);
 

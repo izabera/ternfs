@@ -5,6 +5,7 @@
 #include "LogsDB.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <rocksdb/comparator.h>
@@ -18,6 +19,7 @@
 
 #include "Assert.hpp"
 #include "LogsDBData.hpp"
+#include "Msgs.hpp"
 #include "RocksDBUtils.hpp"
 #include "Time.hpp"
 
@@ -307,8 +309,8 @@ public:
         LOG_INFO(_env,"Dropped %s entries after %s", droppedEntriesCount, start);
     }
 
-    LogIdx getHighestKey() const {
-        return std::max(_partitions[0].maxKey, _partitions[1].maxKey);
+    LogIdx getLowestKey() const {
+        return std::min(_partitions[0].firstWriteTime == 0 ? MAX_LOG_IDX : _partitions[0].minKey, _partitions[1].firstWriteTime == 0 ? MAX_LOG_IDX : _partitions[1].minKey);
     }
 
 private:
@@ -1780,6 +1782,10 @@ public:
         return _metadata.getLastReleased();
     }
 
+    LogIdx getHeadIdx() const {
+        return _partitions.getLowestKey();
+    }
+
     const LogsDBStats& getStats() const {
         return _stats;
     }
@@ -1867,6 +1873,10 @@ Duration LogsDB::getNextTimeout() const {
 
 LogIdx LogsDB::getLastReleased() const {
     return _impl->getLastReleased();
+}
+
+LogIdx LogsDB::getHeadIdx() const {
+    return _impl->getHeadIdx();
 }
 
 const LogsDBStats& LogsDB::getStats() const {

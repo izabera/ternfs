@@ -1710,6 +1710,16 @@ func main() {
 			reflect.TypeOf(msgs.SetDirectoryInfoReq{}),
 			reflect.TypeOf(msgs.SetDirectoryInfoResp{}),
 		},
+		{
+			0x0E,
+			reflect.TypeOf(msgs.GetLinkEntriesReq{}),
+			reflect.TypeOf(msgs.GetLinkEntriesResp{}),
+		},
+		{
+			0x0F,
+			reflect.TypeOf(msgs.WaitStateAppliedReq{}),
+			reflect.TypeOf(msgs.WaitStateAppliedResp{}),
+		},
 		// PRIVATE OPERATIONS -- These are safe operations, but we don't want the FS client itself
 		// to perform them. TODO make privileged?
 		{
@@ -2116,22 +2126,26 @@ func main() {
 		reflect.TypeOf(msgs.FullReadDirCursor{}),
 	}
 
-	extras := append([]reflect.Type{reflect.TypeOf(msgs.FailureDomain{})}, append(kernelExtras, []reflect.Type{
-		reflect.TypeOf(msgs.FullRegistryInfo{}),
-		reflect.TypeOf(msgs.TransientFile{}),
-		reflect.TypeOf(msgs.EntryNewBlockInfo{}),
-		reflect.TypeOf(msgs.BlockServiceDeprecatedInfo{}),
-		reflect.TypeOf(msgs.BlockServiceInfoShort{}),
-
-		reflect.TypeOf(msgs.SpanPolicy{}),
-		reflect.TypeOf(msgs.BlockPolicy{}),
-		reflect.TypeOf(msgs.SnapshotPolicy{}),
-		reflect.TypeOf(msgs.FullShardInfo{}),
-		reflect.TypeOf(msgs.RegisterBlockServiceInfo{}),
-		reflect.TypeOf(msgs.FullBlockServiceInfo{}),
-		reflect.TypeOf(msgs.CdcInfo{}),
-		reflect.TypeOf(msgs.LocationInfo{}),
-	}...)...)
+	extras := append(
+		[]reflect.Type{
+			reflect.TypeOf(msgs.FailureDomain{}),
+		},
+		append(kernelExtras, []reflect.Type{
+			reflect.TypeOf(msgs.LinkEntry{}),
+			reflect.TypeOf(msgs.FullRegistryInfo{}),
+			reflect.TypeOf(msgs.TransientFile{}),
+			reflect.TypeOf(msgs.EntryNewBlockInfo{}),
+			reflect.TypeOf(msgs.BlockServiceDeprecatedInfo{}),
+			reflect.TypeOf(msgs.BlockServiceInfoShort{}),
+			reflect.TypeOf(msgs.SpanPolicy{}),
+			reflect.TypeOf(msgs.BlockPolicy{}),
+			reflect.TypeOf(msgs.SnapshotPolicy{}),
+			reflect.TypeOf(msgs.FullShardInfo{}),
+			reflect.TypeOf(msgs.RegisterBlockServiceInfo{}),
+			reflect.TypeOf(msgs.FullBlockServiceInfo{}),
+			reflect.TypeOf(msgs.CdcInfo{}),
+			reflect.TypeOf(msgs.LocationInfo{}),
+		}...)...)
 
 	goExtras := append(extras, []reflect.Type{
 		reflect.TypeOf(msgs.IpPort{}),

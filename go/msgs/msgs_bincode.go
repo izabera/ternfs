@@ -501,6 +501,10 @@ func (k ShardMessageKind) String() string {
 		return "SCRAP_TRANSIENT_FILE"
 	case 13:
 		return "SET_DIRECTORY_INFO"
+	case 14:
+		return "GET_LINK_ENTRIES"
+	case 15:
+		return "WAIT_STATE_APPLIED"
 	case 112:
 		return "VISIT_DIRECTORIES"
 	case 113:
@@ -572,6 +576,8 @@ const (
 	ADD_SPAN_LOCATION                ShardMessageKind = 0x15
 	SCRAP_TRANSIENT_FILE             ShardMessageKind = 0x16
 	SET_DIRECTORY_INFO               ShardMessageKind = 0xD
+	GET_LINK_ENTRIES                 ShardMessageKind = 0xE
+	WAIT_STATE_APPLIED               ShardMessageKind = 0xF
 	VISIT_DIRECTORIES                ShardMessageKind = 0x70
 	VISIT_FILES                      ShardMessageKind = 0x71
 	VISIT_TRANSIENT_FILES            ShardMessageKind = 0x72
@@ -619,6 +625,8 @@ var AllShardMessageKind = [...]ShardMessageKind{
 	ADD_SPAN_LOCATION,
 	SCRAP_TRANSIENT_FILE,
 	SET_DIRECTORY_INFO,
+	GET_LINK_ENTRIES,
+	WAIT_STATE_APPLIED,
 	VISIT_DIRECTORIES,
 	VISIT_FILES,
 	VISIT_TRANSIENT_FILES,
@@ -692,6 +700,10 @@ func MkShardMessage(k string) (ShardRequest, ShardResponse, error) {
 		return &ScrapTransientFileReq{}, &ScrapTransientFileResp{}, nil
 	case k == "SET_DIRECTORY_INFO":
 		return &SetDirectoryInfoReq{}, &SetDirectoryInfoResp{}, nil
+	case k == "GET_LINK_ENTRIES":
+		return &GetLinkEntriesReq{}, &GetLinkEntriesResp{}, nil
+	case k == "WAIT_STATE_APPLIED":
+		return &WaitStateAppliedReq{}, &WaitStateAppliedResp{}, nil
 	case k == "VISIT_DIRECTORIES":
 		return &VisitDirectoriesReq{}, &VisitDirectoriesResp{}, nil
 	case k == "VISIT_FILES":
@@ -2503,6 +2515,97 @@ func (v *SetDirectoryInfoResp) Pack(w io.Writer) error {
 }
 
 func (v *SetDirectoryInfoResp) Unpack(r io.Reader) error {
+	return nil
+}
+
+func (v *GetLinkEntriesReq) ShardRequestKind() ShardMessageKind {
+	return GET_LINK_ENTRIES
+}
+
+func (v *GetLinkEntriesReq) Pack(w io.Writer) error {
+	if err := bincode.PackScalar(w, uint64(v.FromIdx)); err != nil {
+		return err
+	}
+	if err := bincode.PackScalar(w, uint16(v.Mtu)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (v *GetLinkEntriesReq) Unpack(r io.Reader) error {
+	if err := bincode.UnpackScalar(r, (*uint64)(&v.FromIdx)); err != nil {
+		return err
+	}
+	if err := bincode.UnpackScalar(r, (*uint16)(&v.Mtu)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (v *GetLinkEntriesResp) ShardResponseKind() ShardMessageKind {
+	return GET_LINK_ENTRIES
+}
+
+func (v *GetLinkEntriesResp) Pack(w io.Writer) error {
+	len1 := len(v.Entries)
+	if err := bincode.PackLength(w, len1); err != nil {
+		return err
+	}
+	for i := 0; i < len1; i++ {
+		if err := v.Entries[i].Pack(w); err != nil {
+			return err
+		}
+	}
+	if err := bincode.PackScalar(w, uint64(v.NextIdx)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (v *GetLinkEntriesResp) Unpack(r io.Reader) error {
+	var len1 int
+	if err := bincode.UnpackLength(r, &len1); err != nil {
+		return err
+	}
+	bincode.EnsureLength(&v.Entries, len1)
+	for i := 0; i < len1; i++ {
+		if err := v.Entries[i].Unpack(r); err != nil {
+			return err
+		}
+	}
+	if err := bincode.UnpackScalar(r, (*uint64)(&v.NextIdx)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (v *WaitStateAppliedReq) ShardRequestKind() ShardMessageKind {
+	return WAIT_STATE_APPLIED
+}
+
+func (v *WaitStateAppliedReq) Pack(w io.Writer) error {
+	if err := bincode.PackScalar(w, uint64(v.Idx)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (v *WaitStateAppliedReq) Unpack(r io.Reader) error {
+	if err := bincode.UnpackScalar(r, (*uint64)(&v.Idx)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (v *WaitStateAppliedResp) ShardResponseKind() ShardMessageKind {
+	return WAIT_STATE_APPLIED
+}
+
+func (v *WaitStateAppliedResp) Pack(w io.Writer) error {
+	return nil
+}
+
+func (v *WaitStateAppliedResp) Unpack(r io.Reader) error {
 	return nil
 }
 
@@ -4581,6 +4684,32 @@ func (v *FullReadDirCursor) Unpack(r io.Reader) error {
 		return err
 	}
 	if err := bincode.UnpackScalar(r, (*uint64)(&v.StartTime)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (v *LinkEntry) Pack(w io.Writer) error {
+	if err := bincode.PackScalar(w, uint64(v.Id)); err != nil {
+		return err
+	}
+	if err := bincode.PackScalar(w, uint64(v.OwnerId)); err != nil {
+		return err
+	}
+	if err := bincode.PackScalar(w, uint64(v.Time)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (v *LinkEntry) Unpack(r io.Reader) error {
+	if err := bincode.UnpackScalar(r, (*uint64)(&v.Id)); err != nil {
+		return err
+	}
+	if err := bincode.UnpackScalar(r, (*uint64)(&v.OwnerId)); err != nil {
+		return err
+	}
+	if err := bincode.UnpackScalar(r, (*uint64)(&v.Time)); err != nil {
 		return err
 	}
 	return nil

@@ -4212,6 +4212,8 @@ bool readOnlyShardReq(const ShardMessageKind kind) {
     case ShardMessageKind::ADD_SPAN_LOCATION:
     case ShardMessageKind::ADD_SPAN_AT_LOCATION_INITIATE:
     case ShardMessageKind::SCRAP_TRANSIENT_FILE:
+    case ShardMessageKind::GET_LINK_ENTRIES:
+    case ShardMessageKind::WAIT_STATE_APPLIED:
         return false;
     case ShardMessageKind::ERROR:
         throw TERN_EXCEPTION("unexpected ERROR shard message kind");

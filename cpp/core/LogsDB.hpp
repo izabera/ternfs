@@ -140,6 +140,7 @@ public:
 
     LogIdx getLastReleased() const;
 
+    LogIdx getHeadIdx() const;
 
     const LogsDBStats& getStats() const;
 
