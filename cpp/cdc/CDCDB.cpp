@@ -4,6 +4,7 @@
 
 #include "CDCDB.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <memory>
@@ -14,6 +15,7 @@
 #include <rocksdb/utilities/transaction.h>
 #include <rocksdb/utilities/optimistic_transaction_db.h>
 #include <unordered_set>
+
 
 #include "Assert.hpp"
 #include "AssertiveLock.hpp"
@@ -860,16 +862,12 @@ struct SoftUnlinkDirectoryStateMachine {
             const auto& statResp = resp.getStatDirectory();
             // insert tags
             for (const auto& newEntry : statResp.info.entries.els) {
-                bool found = false;
-                for (const auto& entry: info.entries.els) {
-                    if (entry.tag == newEntry.tag) {
-                        found = true;
-                        break;
-                    }
+                if (std::find(REQUIRED_DIR_INFO_TAGS.begin(), REQUIRED_DIR_INFO_TAGS.end(), newEntry.tag) == REQUIRED_DIR_INFO_TAGS.end() ||
+                    std::find(info.entries.els.begin(), info.entries.els.end(), newEntry) != info.entries.els.end()) {
+                    // skip non required tags or already present tags
+                    continue;
                 }
-                if (!found) {
-                    info.entries.els.emplace_back(newEntry);
-                }
+                info.entries.els.emplace_back(newEntry);
             }
             if (info.entries.els.size() == REQUIRED_DIR_INFO_TAGS.size()) { // we've found everything
                 auto& shardReq = env.needsShard(SOFT_UNLINK_DIRECTORY_REMOVE_OWNER, req.targetId.shard(), false).setRemoveDirectoryOwner();
