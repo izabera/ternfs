@@ -19,7 +19,6 @@ import (
 	"xtx/ternfs/core/log"
 	"xtx/ternfs/core/parity"
 	"xtx/ternfs/core/rs"
-	"xtx/ternfs/core/timing"
 	"xtx/ternfs/msgs"
 )
 
@@ -313,30 +312,39 @@ func (c *Client) CreateSpan(
 		for _, block := range initiateResp.Resp.Blocks {
 			blocks = append(blocks, block.BlockId)
 		}
-		// write blocks
 		certifyReq := msgs.AddSpanCertifyReq{
 			FileId:     id,
 			Cookie:     cookie,
 			ByteOffset: offset,
 			Proofs:     make([]msgs.BlockProof, len(initiateResp.Resp.Blocks)),
 		}
+		writeCh := make(chan *blockCompletion, len(initiateResp.Resp.Blocks))
 		for i, block := range initiateResp.Resp.Blocks {
-			var proof [8]byte
 			blockCrc, blockReader := mkBlockReader(&initiateReq.Req, *data, i)
-			// fail immediately to other block services
-			proof, err = c.WriteBlock(log, &timing.NoTimeouts, &block, blockReader, initiateReq.Req.CellSize*uint32(initiateReq.Req.Stripes), blockCrc)
-			if err != nil {
+			// Start writing block asynchronously
+			if startErr := c.StartWriteBlock(log, &block, blockReader, initiateReq.Req.CellSize*uint32(initiateReq.Req.Stripes), blockCrc, i, writeCh); startErr != nil {
 				initiateReq.Req.Blacklist = append(initiateReq.Req.Blacklist, msgs.BlacklistEntry{FailureDomain: block.BlockServiceFailureDomain})
-				log.Info("failed to write block to %+v: %v, might retry without failure domain %q", block, err, string(block.BlockServiceFailureDomain.Name[:]))
+				log.Info("failed to start write block to %+v: %v, might retry without failure domain %q", block, startErr, string(block.BlockServiceFailureDomain.Name[:]))
 				goto FailedAttempt
 			}
-			certifyReq.Proofs[i].BlockId = block.BlockId
-			certifyReq.Proofs[i].Proof = proof
+		}
+		for range initiateResp.Resp.Blocks {
+			result := <-writeCh
+			blockIdx := result.Extra.(int)
+			if result.Error != nil {
+				block := initiateResp.Resp.Blocks[blockIdx]
+				initiateReq.Req.Blacklist = append(initiateReq.Req.Blacklist, msgs.BlacklistEntry{FailureDomain: block.BlockServiceFailureDomain})
+				log.Info("failed to write block to %+v: %v, might retry without failure domain %q", block, result.Error, string(block.BlockServiceFailureDomain.Name[:]))
+				err = result.Error
+				goto FailedAttempt
+			}
+			certifyReq.Proofs[blockIdx].BlockId = initiateResp.Resp.Blocks[blockIdx].BlockId
+			certifyReq.Proofs[blockIdx].Proof = result.Resp.(*msgs.WriteBlockResp).Proof
 		}
 		if err = c.ShardRequest(log, id.Shard(), &certifyReq, &msgs.AddSpanCertifyResp{}); err != nil {
 			return nil, err
 		}
-		// we've managed
+		// we've managed to write the span successfully
 		break
 
 	FailedAttempt:
