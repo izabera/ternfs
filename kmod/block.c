@@ -435,10 +435,6 @@ static struct block_socket* __acquires(RCU) get_block_socket(
     err = sock_create_kern(&init_net, PF_INET, SOCK_STREAM, IPPROTO_TCP, &sock->sock);
     if (err != 0) { goto out_err_sock; }
 
-    // very important to set it so we can use kernel_sendmsg from sk_write_space callback
-    // otherwsi we might try to allocate and sleep
-    sock->sock->sk->sk_allocation = GFP_ATOMIC;
-
     init_completion(&sock->sock_wait);
 
     // Put the minimal state_change callback in before connecting because it is
