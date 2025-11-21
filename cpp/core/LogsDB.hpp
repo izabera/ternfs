@@ -70,22 +70,31 @@ struct LogsDBResponse {
 std::ostream& operator<<(std::ostream& out, const LogsDBResponse& entry);
 
 struct LogsDBStats {
+    alignas(64)
+    std::atomic<bool> isLeader{false};
     std::atomic<Duration> idleTime{0};
     std::atomic<Duration> processingTime{0};
-    std::atomic<Duration> leaderLastActive{0};
-    std::atomic<double> appendWindow{0};
-    std::atomic<double> entriesReleased{0};
-    std::atomic<double> followerLag{0};
-    std::atomic<double> readerLag{0};
-    std::atomic<double> catchupWindow{0};
-    std::atomic<double> entriesRead{0};
     std::atomic<double> requestsReceived{0};
     std::atomic<double> responsesReceived{0};
+    std::atomic<double> appendWindow{0};
+
+    alignas(64)
     std::atomic<double> requestsSent{0};
     std::atomic<double> responsesSent{0};
     std::atomic<double> requestsTimedOut{0};
+
+    alignas(64)
+    std::atomic<double> entriesRead{0};
+    std::atomic<double> readerLag{0};
+
+    alignas(64)
+    std::atomic<double> followerLag{0};
+    std::atomic<double> catchupWindow{0};
+
+    alignas(64)
+    std::atomic<Duration> leaderLastActive{0};
     std::atomic<uint64_t> currentEpoch{0};
-    std::atomic<bool> isLeader{false};
+    std::atomic<double> entriesReleased{0};
 };
 
 class LogsDBImpl;
