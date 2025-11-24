@@ -51,6 +51,18 @@ static void ternfs_free_fs_info(struct ternfs_fs_info* info) {
         } \
     } while (0)
 
+#define sendloop(target) \
+    do { \
+        int written_so_far; \
+        for (written_so_far = 0; written_so_far < sizeof(target);) { \
+            iov.iov_base = target + written_so_far; \
+            iov.iov_len = sizeof(target) - written_so_far; \
+            int written = kernel_sendmsg(registry_sock, &msg, &iov, 1, iov.iov_len); \
+            if (written < 0) { err = written; goto out_sock; } \
+            written_so_far += written; \
+        } \
+    } while (0)
+
 static int ternfs_refresh_fs_info(struct ternfs_fs_info* info) {
     int err;
 
@@ -64,14 +76,7 @@ static int ternfs_refresh_fs_info(struct ternfs_fs_info* info) {
         static_assert(TERNFS_LOCAL_SHARDS_REQ_SIZE == 0);
         char registry_req[TERNFS_REGISTRY_REQ_HEADER_SIZE];
         ternfs_write_registry_req_header(registry_req, TERNFS_LOCAL_SHARDS_REQ_SIZE, TERNFS_REGISTRY_LOCAL_SHARDS);
-        int written_so_far;
-        for (written_so_far = 0; written_so_far < sizeof(registry_req);) {
-            iov.iov_base = registry_req + written_so_far;
-            iov.iov_len = sizeof(registry_req) - written_so_far;
-            int written = kernel_sendmsg(registry_sock, &msg, &iov, 1, iov.iov_len);
-            if (written < 0) { err = written; goto out_sock; }
-            written_so_far += written;
-        }
+        sendloop(registry_req);
 
         char shards_resp_header[TERNFS_REGISTRY_RESP_HEADER_SIZE + 2]; // + 2 = list len
         recvloop(shards_resp_header);
@@ -122,14 +127,7 @@ static int ternfs_refresh_fs_info(struct ternfs_fs_info* info) {
         static_assert(TERNFS_LOCAL_CDC_REQ_SIZE == 0);
         char cdc_req[TERNFS_REGISTRY_REQ_HEADER_SIZE];
         ternfs_write_registry_req_header(cdc_req, TERNFS_LOCAL_CDC_REQ_SIZE, TERNFS_REGISTRY_LOCAL_CDC);
-        int written_so_far;
-        for (written_so_far = 0; written_so_far < sizeof(cdc_req);) {
-            iov.iov_base = cdc_req + written_so_far;
-            iov.iov_len = sizeof(cdc_req) - written_so_far;
-            int written = kernel_sendmsg(registry_sock, &msg, &iov, 1, iov.iov_len);
-            if (written < 0) { err = written; goto out_sock; }
-            written_so_far += written;
-        }
+        sendloop(cdc_req);
 
         char cdc_resp_header[TERNFS_REGISTRY_RESP_HEADER_SIZE];
         recvloop(cdc_resp_header);
@@ -182,14 +180,7 @@ static int ternfs_refresh_fs_info(struct ternfs_fs_info* info) {
             ternfs_local_changed_block_services_req_put_changed_since(&ctx, start, changed_since, info->block_services_last_changed_time);
             ternfs_local_changed_block_services_req_put_end(&ctx, changed_since, end);
             ternfs_write_registry_req_header(changed_block_services_req, TERNFS_LOCAL_CHANGED_BLOCK_SERVICES_REQ_SIZE, TERNFS_REGISTRY_LOCAL_CHANGED_BLOCK_SERVICES);
-            int written_so_far;
-            for (written_so_far = 0; written_so_far < sizeof(changed_block_services_req);) {
-                iov.iov_base = changed_block_services_req + written_so_far;
-                iov.iov_len = sizeof(changed_block_services_req) - written_so_far;
-                int written = kernel_sendmsg(registry_sock, &msg, &iov, 1, iov.iov_len);
-                if (written < 0) { err = written; goto out_sock; }
-                written_so_far += written;
-            }
+            sendloop(changed_block_services_req);
         }
         u32 registry_resp_len;
         u8 registry_resp_kind;
@@ -266,14 +257,7 @@ static int ternfs_refresh_fs_info(struct ternfs_fs_info* info) {
         static_assert(TERNFS_INFO_REQ_SIZE == 0);
         char info_req[TERNFS_REGISTRY_REQ_HEADER_SIZE];
         ternfs_write_registry_req_header(info_req, 0, TERNFS_REGISTRY_INFO);
-        int written_so_far;
-        for (written_so_far = 0; written_so_far < sizeof(info_req);) {
-            iov.iov_base = info_req + written_so_far;
-            iov.iov_len = sizeof(info_req) - written_so_far;
-            int written = kernel_sendmsg(registry_sock, &msg, &iov, 1, iov.iov_len);
-            if (written < 0) { err = written; goto out_sock; }
-            written_so_far += written;
-        }
+        sendloop(info_req);
 
         char info_resp_header[TERNFS_REGISTRY_RESP_HEADER_SIZE];
         recvloop(info_resp_header);
