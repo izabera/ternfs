@@ -38,6 +38,19 @@ static void ternfs_free_fs_info(struct ternfs_fs_info* info) {
     kfree(info);
 }
 
+#define recvloop(target) \
+    do { \
+        int read_so_far; \
+        for (read_so_far = 0; read_so_far < sizeof(target);) { \
+            iov.iov_base = target + read_so_far; \
+            iov.iov_len = sizeof(target) - read_so_far; \
+            int read = kernel_recvmsg(registry_sock, &msg, &iov, 1, iov.iov_len, 0); \
+            if (read == 0) { err = -ECONNRESET; goto out_sock; } \
+            if (read < 0) { err = read; goto out_sock; } \
+            read_so_far += read; \
+        } \
+    } while (0)
+
 static int ternfs_refresh_fs_info(struct ternfs_fs_info* info) {
     int err;
 
@@ -61,15 +74,7 @@ static int ternfs_refresh_fs_info(struct ternfs_fs_info* info) {
         }
 
         char shards_resp_header[TERNFS_REGISTRY_RESP_HEADER_SIZE + 2]; // + 2 = list len
-        int read_so_far;
-        for (read_so_far = 0; read_so_far < sizeof(shards_resp_header);) {
-            iov.iov_base = shards_resp_header + read_so_far;
-            iov.iov_len = sizeof(shards_resp_header) - read_so_far;
-            int read = kernel_recvmsg(registry_sock, &msg, &iov, 1, iov.iov_len, 0);
-            if (read == 0) { err = -ECONNRESET; goto out_sock; }
-            if (read < 0) { err = read; goto out_sock; }
-            read_so_far += read;
-        }
+        recvloop(shards_resp_header);
         u32 registry_resp_len;
         u8 registry_resp_kind;
         err = ternfs_read_registry_resp_header(shards_resp_header, &registry_resp_len, &registry_resp_kind);
@@ -87,14 +92,7 @@ static int ternfs_refresh_fs_info(struct ternfs_fs_info* info) {
         int shid;
         for (shid = 0; shid < 256; shid++) {
             char shard_info_resp[TERNFS_SHARD_INFO_SIZE];
-            for (read_so_far = 0; read_so_far < TERNFS_SHARD_INFO_SIZE;) {
-                iov.iov_base = shard_info_resp + read_so_far;
-                iov.iov_len = sizeof(shard_info_resp) - read_so_far;
-                int read = kernel_recvmsg(registry_sock, &msg, &iov, 1, iov.iov_len, 0);
-                if (read == 0) { err = -ECONNRESET; goto out_sock; }
-                if (read < 0) { err = read; goto out_sock; }
-                read_so_far += read;
-            }
+            recvloop(shard_info_resp);
             struct ternfs_bincode_get_ctx ctx = {
                 .buf = shard_info_resp,
                 .end = shard_info_resp + sizeof(shard_info_resp),
@@ -134,15 +132,7 @@ static int ternfs_refresh_fs_info(struct ternfs_fs_info* info) {
         }
 
         char cdc_resp_header[TERNFS_REGISTRY_RESP_HEADER_SIZE];
-        int read_so_far;
-        for (read_so_far = 0; read_so_far < sizeof(cdc_resp_header);) {
-            iov.iov_base = cdc_resp_header + read_so_far;
-            iov.iov_len = sizeof(cdc_resp_header) - read_so_far;
-            int read = kernel_recvmsg(registry_sock, &msg, &iov, 1, iov.iov_len, 0);
-            if (read == 0) { err = -ECONNRESET; goto out_sock; }
-            if (read < 0) { err = read; goto out_sock; }
-            read_so_far += read;
-        }
+        recvloop(cdc_resp_header);
         u32 registry_resp_len;
         u8 registry_resp_kind;
         err = ternfs_read_registry_resp_header(cdc_resp_header, &registry_resp_len, &registry_resp_kind);
@@ -153,14 +143,7 @@ static int ternfs_refresh_fs_info(struct ternfs_fs_info* info) {
         }
         {
             char cdc_resp[TERNFS_LOCAL_CDC_RESP_SIZE];
-            for (read_so_far = 0; read_so_far < sizeof(cdc_resp);) {
-                iov.iov_base = (char*)&cdc_resp + read_so_far;
-                iov.iov_len = sizeof(cdc_resp) - read_so_far;
-                int read = kernel_recvmsg(registry_sock, &msg, &iov, 1, iov.iov_len, 0);
-                if (read == 0) { err = -ECONNRESET; goto out_sock; }
-                if (read < 0) { err = read; goto out_sock; }
-                read_so_far += read;
-            }
+            recvloop(cdc_resp);
             struct ternfs_bincode_get_ctx ctx = {
                 .buf = cdc_resp,
                 .end = cdc_resp + sizeof(cdc_resp),
@@ -212,15 +195,7 @@ static int ternfs_refresh_fs_info(struct ternfs_fs_info* info) {
         u8 registry_resp_kind;
         {
             char block_services_resp_header[TERNFS_REGISTRY_RESP_HEADER_SIZE];
-            int read_so_far;
-            for (read_so_far = 0; read_so_far < sizeof(block_services_resp_header);) {
-                iov.iov_base = block_services_resp_header + read_so_far;
-                iov.iov_len = sizeof(block_services_resp_header) - read_so_far;
-                int read = kernel_recvmsg(registry_sock, &msg, &iov, 1, iov.iov_len, 0);
-                if (read == 0) { err = -ECONNRESET; goto out_sock; }
-                if (read < 0) { err = read; goto out_sock; }
-                read_so_far += read;
-            }
+            recvloop(block_services_resp_header);
             err = ternfs_read_registry_resp_header(block_services_resp_header, &registry_resp_len, &registry_resp_kind);
             if (err < 0) { goto out_sock; }
         }
@@ -233,15 +208,7 @@ static int ternfs_refresh_fs_info(struct ternfs_fs_info* info) {
                 err = -EINVAL;
                 goto out_sock;
             }
-            int read_so_far;
-            for (read_so_far = 0; read_so_far < sizeof(last_changed_and_len);) {
-                iov.iov_base = last_changed_and_len + read_so_far;
-                iov.iov_len = sizeof(last_changed_and_len) - read_so_far;
-                int read = kernel_recvmsg(registry_sock, &msg, &iov, 1, iov.iov_len, 0);
-                if (read == 0) { err = -ECONNRESET; goto out_sock; }
-                if (read < 0) { err = read; goto out_sock; }
-                read_so_far += read;
-            }
+            recvloop(last_changed_and_len);
             last_changed = get_unaligned_le64(last_changed_and_len);
             block_services_len = get_unaligned_le16(last_changed_and_len + sizeof(last_changed));
             registry_resp_len -= sizeof(last_changed_and_len);
@@ -254,17 +221,9 @@ static int ternfs_refresh_fs_info(struct ternfs_fs_info* info) {
                 goto out_sock;
             }
             u16 block_service_idx;
-            int read_so_far;
             for (block_service_idx = 0; block_service_idx < block_services_len; block_service_idx++) {
                 char block_service_buf[TERNFS_BLOCK_SERVICE_SIZE];
-                for (read_so_far = 0; read_so_far < sizeof(block_service_buf);) {
-                    iov.iov_base = block_service_buf + read_so_far;
-                    iov.iov_len = sizeof(block_service_buf) - read_so_far;
-                    int read = kernel_recvmsg(registry_sock, &msg, &iov, 1, iov.iov_len, 0);
-                    if (read == 0) { err = -ECONNRESET; goto out_sock; }
-                    if (read < 0) { err = read; goto out_sock; }
-                    read_so_far += read;
-                }
+                recvloop(block_service_buf);
                 struct ternfs_bincode_get_ctx bs_ctx = {
                     .buf = block_service_buf,
                     .end = block_service_buf + sizeof(block_service_buf),
@@ -317,15 +276,7 @@ static int ternfs_refresh_fs_info(struct ternfs_fs_info* info) {
         }
 
         char info_resp_header[TERNFS_REGISTRY_RESP_HEADER_SIZE];
-        int read_so_far;
-        for (read_so_far = 0; read_so_far < sizeof(info_resp_header);) {
-            iov.iov_base = info_resp_header + read_so_far;
-            iov.iov_len = sizeof(info_resp_header) - read_so_far;
-            int read = kernel_recvmsg(registry_sock, &msg, &iov, 1, iov.iov_len, 0);
-            if (read == 0) { err = -ECONNRESET; goto out_sock; }
-            if (read < 0) { err = read; goto out_sock; }
-            read_so_far += read;
-        }
+        recvloop(info_resp_header);
         u32 info_resp_len;
         u8 info_resp_kind;
         err = ternfs_read_registry_resp_header(info_resp_header, &info_resp_len, &info_resp_kind);
@@ -337,14 +288,7 @@ static int ternfs_refresh_fs_info(struct ternfs_fs_info* info) {
             err = -EIO; goto out_sock;
         }
         char info_resp[TERNFS_INFO_RESP_SIZE];
-        for (read_so_far = 0; read_so_far < sizeof(info_resp);) {
-            iov.iov_base = (char*)&info_resp + read_so_far;
-            iov.iov_len = sizeof(info_resp) - read_so_far;
-            int read = kernel_recvmsg(registry_sock, &msg, &iov, 1, iov.iov_len, 0);
-            if (read == 0) { err = -ECONNRESET; goto out_sock; }
-            if (read < 0) { err = read; goto out_sock; }
-            read_so_far += read;
-        }
+        recvloop(info_resp);
         struct ternfs_bincode_get_ctx ctx = {
             .buf = info_resp,
             .end = info_resp + sizeof(info_resp),
